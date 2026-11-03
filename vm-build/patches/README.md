@@ -3,6 +3,13 @@
 node_modules 是 gitignore 的，npm install 会冲掉对 pxt 包的手工修改，
 所以补丁以文本形式保存在这里，升级/重装后重新套用。
 
+## 重放
+
+    python patches/apply.py
+
+幂等（已打过则跳过），自带 node --check 语法自检。GitHub Actions 的
+打包流程（.github/workflows/package.yml）在 npm install 后自动跑。
+
 ## codeload-downloadTextAsync.js
 
 套用位置：`node_modules/pxt-core/built/pxt.js`，

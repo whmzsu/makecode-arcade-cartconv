@@ -1,0 +1,75 @@
+# package.yml — 在 GitHub Actions 上打包 Windows 便携包
+#
+# 产物：dist/cartconv/makecode-cartconv-<ver>-windows-x64.zip
+#   - 手动触发（workflow_dispatch）：只上传 artifact，供下载验证
+#   - 推 v* tag：打包后直接建 GitHub Release 并附上 zip
+#
+# 与本地 package_cartconv.sh 的关系：跑的就是同一个脚本，只在外部
+# 依赖上做了替换（zig / node 运行时由 runner 侧下载，补丁用
+# vm-build/patches/apply.py 重放）。本地能打，CI 就能打。
+
+name: package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 读取版本号
+        id: ver
+        run: echo "ver=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 zig（编译拖拽入口 launcher.c）
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.17.0
+
+      - name: 下载 node 运行时（win-x64，打进便携包）
+        run: |
+          NODE_VER=$(curl -s https://nodejs.org/dist/index.json | python -c "import json,sys;d=json.load(sys.stdin);print(next(v['version'][1:] for v in d if v['version'].startswith('v22.')))")
+          echo "node runtime: v$NODE_VER"
+          curl -sL -o "$RUNNER_TEMP/node.zip" "https://nodejs.org/dist/v$NODE_VER/node-v$NODE_VER-win-x64.zip"
+          mkdir -p "$RUNNER_TEMP/noderuntime"
+          unzip -q "$RUNNER_TEMP/node.zip" -d "$RUNNER_TEMP/noderuntime"
+          echo "NODE_EXE=$RUNNER_TEMP/noderuntime/node-v$NODE_VER-win-x64/node.exe" >> "$GITHUB_ENV"
+
+      - name: 安装 pxt 编译链 + 重放补丁
+        working-directory: vm-build
+        run: |
+          npm install
+          python patches/apply.py
+
+      - name: 打包（预生成编译缓存 + 压缩）
+        env:
+          # 打包脚本内部用 $ZIG 编译 launcher.c；setup-zig 已把 zig 放进 PATH
+          ZIG: zig
+          # 打包脚本会优先用 NODE_EXE 指定的 node.exe 作为随包运行时
+          NODE_EXE: ${{ env.NODE_EXE }}
+        run: bash package_cartconv.sh
+
+      - name: 上传 artifact（每次运行都可下载）
+        uses: actions/upload-artifact@v4
+        with:
+          name: makecode-cartconv-${{ steps.ver.outputs.ver }}-windows-x64
+          path: dist/cartconv/makecode-cartconv-*-windows-x64.zip
+          if-no-files-found: error
+
+      - name: 发布 Release（仅 v* tag 触发时）
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/cartconv/makecode-cartconv-*-windows-x64.zip
+          generate_release_notes: true
