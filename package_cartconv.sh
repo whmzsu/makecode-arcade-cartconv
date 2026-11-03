@@ -77,6 +77,9 @@ echo "== 4/6 pxt 编译链（按白名单复制）=="
 #   *.map      调试符号，运行不需要
 #   proj_*     开发时留下的 pxt 工程
 #   webapp / common-docs   只有网页版用得到
+#   .cartconv_* / .bs_debug / .pxt-common-packages-*
+#              本地开发留下的临时工作目录。CI 全新 checkout 没有这些，
+#              本地打包会把它们一起吞进包里（实测多出十几 MB）
 mkdir -p "$STAGE/runtime/node_modules"
 
 copy_pkg() {
@@ -91,6 +94,10 @@ copy_pkg() {
       --exclude='testproj' \
       --exclude='webapp' \
       --exclude='common-docs' \
+      --exclude='.cartconv_*' \
+      --exclude='.bs_debug' \
+      --exclude='.pxt-common-packages-*' \
+      --exclude='.git' \
       -cf - . 2>/dev/null | tar -C "$dst" -xf - 2>/dev/null
   return 0
 }
@@ -126,6 +133,12 @@ cp "$PROJ/examples/arcade-ping.png" "$TMP_CART/t.png"
   || { echo "预生成缓存失败" >&2; exit 3; }
 rm -rf "$TMP_CART" 2>/dev/null || true
 echo "   缓存 $(du -sm "$STAGE/.cache" 2>/dev/null | cut -f1) MB"
+
+# 第 5 步在包内真跑了一次转换，会生成引导/工作目录。正常流程结束时会自删，
+# 但 Windows 上 rmrf 偶尔静默失败（见 cartconv.js 相关注释），残留会被打进包
+# 多出十几 MB。模板已在 .cache/template 里，这些目录纯属死重，直接清掉。
+rm -rf "$STAGE"/runtime/node_modules/pxt-arcade/.cartconv_* 2>/dev/null || true
+rm -rf "$STAGE"/runtime/node_modules/pxt-arcade/.bs_debug 2>/dev/null || true
 
 echo "== 6/6 说明文件 =="
 cat > "$STAGE/README.txt" <<'EOF'
