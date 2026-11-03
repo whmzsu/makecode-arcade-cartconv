@@ -16,6 +16,11 @@ import glob
 import os
 import sys
 
+# Windows runner 的 Python 默认 stdout 是 cp1252，print 中文会炸
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PXT_JS = os.path.normpath(
     os.path.join(HERE, "..", "node_modules", "pxt-core", "built", "pxt.js")

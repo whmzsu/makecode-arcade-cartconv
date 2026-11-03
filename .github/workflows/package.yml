@@ -25,6 +25,9 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      # 防 Windows Python(cp1252) 遇中文输出炸掉（apply.py / zip 步骤）
+      PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
 
