@@ -4,3 +4,6 @@ out/
 .cache/
 *.pyc
 __pycache__/
+
+# 记忆/会话数据
+.workbuddy/
