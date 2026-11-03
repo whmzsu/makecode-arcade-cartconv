@@ -33,9 +33,16 @@ jobs:
         run: echo "ver=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
       - name: 安装 zig（编译拖拽入口 launcher.c）
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.17.0
+        # 不用 setup-zig：它的镜像经常 5xx，且 0.14+ 官方改名
+        # zig-x86_64-windows-<ver>.zip 导致旧版 action 404。直接官方 index 取 URL。
+        run: |
+          URL=$(curl -s https://ziglang.org/download/index.json | python -c "import json,sys;print(json.load(sys.stdin)['0.17.0']['x86_64-windows']['tarball'])")
+          echo "zig: $URL"
+          curl -sL -o "$RUNNER_TEMP/zig.zip" "$URL"
+          mkdir -p "$RUNNER_TEMP/zig"
+          unzip -q "$RUNNER_TEMP/zig.zip" -d "$RUNNER_TEMP/zig"
+          ZIGDIR=$(ls -d "$RUNNER_TEMP"/zig/zig-*/ | head -1)
+          echo "ZIG=$ZIGDIR/zig.exe" >> "$GITHUB_ENV"
 
       - name: 下载 node 运行时（win-x64，打进便携包）
         run: |
@@ -53,11 +60,7 @@ jobs:
           python patches/apply.py
 
       - name: 打包（预生成编译缓存 + 压缩）
-        env:
-          # 打包脚本内部用 $ZIG 编译 launcher.c；setup-zig 已把 zig 放进 PATH
-          ZIG: zig
-          # 打包脚本会优先用 NODE_EXE 指定的 node.exe 作为随包运行时
-          NODE_EXE: ${{ env.NODE_EXE }}
+        # ZIG / NODE_EXE 已由前面步骤写入 GITHUB_ENV
         run: bash package_cartconv.sh
 
       - name: 上传 artifact（每次运行都可下载）
