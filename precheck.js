@@ -29,9 +29,9 @@ const BIN_EXT = new Set([
 /*
  * 是不是二进制内容。
  *
- * 卡带里的文件都是 JSON 字符串，二进制资源如果被塞进来，只能是 latin1 式
- * 的逐字节映射，于是会出现 C0 控制字符或 UTF-8 替换字符。正常的源码里
- * 只可能有 \t \n \r 三种控制字符。
+ * 卡带里的文件都是 JSON 字符串，二进制资源以 latin1 式逐字节映射存进来，
+ * 于是会出现 C0 控制字符或 UTF-8 替换字符。正常的源码里只可能有 \t \n \r
+ * 三种控制字符。返回 null 表示文本，否则给一句人话原因。
  */
 function looksBinary(s) {
   if (typeof s !== 'string') return '内容不是字符串';
@@ -42,11 +42,25 @@ function looksBinary(s) {
 }
 
 /*
- * 检查源码文件列表，返回无法处理的文件。
+ * 落盘判定：该文件按二进制（latin1 → 原始字节）写出还是按文本（utf8）写出。
  *
- * 二进制资源（新版 MakeCode 的 assets 系统会把用户上传的图片/音效存成
- * assets/xxx.png）在这里必须拦下：当前实现按 utf8 写出，二进制会被打坏，
- * 编译出来的东西是错的，而且不会有任何报错 —— 属于最坏的一类失败。
+ * 规则：扩展名明确是二进制格式，或内容检测出二进制特征 → 按二进制写。
+ * 之前这里直接 fatal 拒收整张卡带，但实测这些文件对 pxt 编译器是惰性的
+ * （编译器只消费 .ts/.jres 等），真正决定成败的是 main.ts 有没有引用它们。
+ * 所以改为放行 + 原样落盘，把判断交给编译器。
+ */
+function isBinaryFile(name, content) {
+  const ext = path.extname(name || '').toLowerCase();
+  if (BIN_EXT.has(ext)) return true;
+  return looksBinary(content) !== null;
+}
+
+/*
+ * 检查源码文件列表，返回有话要说的文件。
+ *
+ * 二进制资源（assets/xxx.png、上传的音效等）不再拦截：cartconv 会按
+ * latin1 → 原始字节把它们原样写进工程，pxt 编译器对不认识的文件是惰性的。
+ * 只有内容已损坏（替换字符）这种无法挽回的才值得多说一句。
  */
 function inspectFiles(sources) {
   const bad = [];
@@ -57,13 +71,20 @@ function inspectFiles(sources) {
     if (BIN_EXT.has(ext)) {
       bad.push({
         name,
-        why: '含二进制资源文件（本工具只处理纯文本工程，这类卡带暂时转不了）',
+        why: '二进制资源文件（将按原样写入工程，游戏能否用到它取决于源码引用）',
+        soft: true,
       });
       continue;
     }
     const bin = looksBinary(content);
+    if (bin === '含非法 UTF-8 序列') {
+      // 数据在制作卡带时就已损坏，写出来也是坏的，提醒一句
+      bad.push({ name, why: bin, soft: true });
+      continue;
+    }
     if (bin) {
-      bad.push({ name, why: bin });
+      // 含控制字符的文件按二进制原样写，不判断、不拦
+      bad.push({ name, why: `二进制内容（${bin}，将按原样写入）`, soft: true });
       continue;
     }
     if (!TEXT_EXT.has(ext) && ext !== '') {
@@ -72,6 +93,62 @@ function inspectFiles(sources) {
     }
   }
   return bad;
+}
+
+/*
+ * 静态核对：源码里的 assets.*`name` 引用，在工程资源（.jres）里能不能找到。
+ *
+ * 背景：castle 卡带黑屏排查时才发现 main.ts 引用的资产名在 images.g.jres
+ * 里对不上 —— 这类卡带编译报错晦涩（TS 找不到工厂返回值）甚至能编过但
+ * 运行异常。编译前对一遍名字，提前把疑点亮出来。
+ *
+ * 只查工程内 .jres；扩展自带的资源（资产包）查不到，所以只 warn 不拦。
+ */
+const ASSET_REF_RE = /assets\.(image|tile|animation|tilemap|song)\s*`([^`]*)`/g;
+const ASSET_REF_PY_RE = /assets\.(image|tile|animation|tilemap|song)\s*\(\s*"""([^"]*)"""\s*\)/g;
+
+function collectJResNames(sources) {
+  const names = new Set();
+  for (const name of Object.keys(sources)) {
+    if (!/\.jres$/i.test(name)) continue;
+    let jres;
+    try {
+      jres = JSON.parse(sources[name]);
+    } catch (e) {
+      continue;
+    }
+    for (const key of Object.keys(jres)) {
+      if (key === '*') continue;
+      names.add(key);
+      names.add(key.split('.').pop()); // images.hero → hero
+      const entry = jres[key];
+      if (entry && typeof entry.displayName === 'string') {
+        names.add(entry.displayName);
+      }
+    }
+  }
+  return names;
+}
+
+function inspectAssetRefs(sources) {
+  const names = collectJResNames(sources);
+  const missing = [];
+  for (const name of Object.keys(sources).sort()) {
+    const content = sources[name];
+    const isTs = /\.ts$/i.test(name);
+    const isPy = /\.py$/i.test(name);
+    if (!isTs && !isPy) continue;
+    const re = isTs ? ASSET_REF_RE : ASSET_REF_PY_RE;
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(content))) {
+      const refName = m[2].trim();
+      if (refName && !names.has(refName)) {
+        missing.push({ file: name, kind: m[1], ref: refName });
+      }
+    }
+  }
+  return missing;
 }
 
 /*
@@ -202,7 +279,14 @@ function run(dec, pxtRoot) {
     );
   }
 
+  for (const m of inspectAssetRefs(dec.sources)) {
+    warn.push(
+      `源码 ${m.file} 引用 assets.${m.kind}\`${m.ref}\`，工程资源里找不到；` +
+        `若该资源不是来自扩展，游戏多半会编译失败或运行缺图`
+    );
+  }
+
   return { fatal, warn, deps: pxtJson ? pxtJson.dependencies || {} : {}, version: v };
 }
 
-module.exports = { run, inspectFiles, inspectDeps, missingDeps, inspectVersion };
+module.exports = { run, inspectFiles, inspectAssetRefs, isBinaryFile, inspectDeps, missingDeps, inspectVersion };

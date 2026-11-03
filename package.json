@@ -1,6 +1,6 @@
 {
   "name": "makecode-cartconv",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MakeCode Arcade .png 卡带 → .pxt64 字节码镜像转换器（离线，免安装）",
   "main": "cartconv.js",
   "bin": {

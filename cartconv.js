@@ -23,7 +23,7 @@ const { spawnSync } = require('child_process');
 const { decodeCart } = require('./cartdec.js');
 const precheck = require('./precheck.js');
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 // ---------------------------------------------------------------- 工具函数
 
@@ -267,12 +267,22 @@ function collectInputs(args, log) {
 
 // ---------------------------------------------------------------- 转换单张
 
+/* 每张卡带一个独立工作目录：并发转换互不踩踏，也杜绝 rmrf 静默失败时
+ * 上一张卡带遗留的 binary.pxt64 被误当成新产物的假成功。 */
+let workSeq = 0;
+function newWorkDir(pxt) {
+  return path.join(
+    pxt.root, 'pxt-arcade',
+    `.cartconv_work_${process.pid}_${++workSeq}_${Date.now().toString(36)}`
+  );
+}
+
 async function convertOne(pxt, tpl, src, outPath, opts) {
   const started = Date.now();
   const dec = await decodeCart(src);
 
-  // 编译前预检。注定失败的（二进制资源、需要联网的社区扩展）在这里就拦下，
-  // 否则玩家看到的是一句没有信息量的 pxt 报错。
+  // 编译前预检。需要联网的社区扩展在这里就拦下，否则玩家看到的是一句
+  // 没有信息量的 pxt 报错；二进制资源不再拦截，只给警告（见 precheck.js）。
   const pre = precheck.run(dec, pxt.root);
   if (pre.fatal.length) {
     // 首行要能独立读懂 —— 失败清单只显示首行
@@ -290,7 +300,7 @@ async function convertOne(pxt, tpl, src, outPath, opts) {
     process.stdout.write(`      源文件 ${names.length} 个: ${names.join(', ')}\n`);
   }
 
-  const work = path.join(pxt.root, 'pxt-arcade', '.cartconv_work');
+  const work = newWorkDir(pxt);
   rmrf(work);
   fs.mkdirSync(work, { recursive: true });
   copyDir(path.join(tpl, 'pxt_modules'), path.join(work, 'pxt_modules'));
@@ -299,7 +309,14 @@ async function convertOne(pxt, tpl, src, outPath, opts) {
   for (const name of Object.keys(dec.sources)) {
     const dst = path.join(work, name.replace(/\\/g, '/'));
     fs.mkdirSync(path.dirname(dst), { recursive: true });
-    fs.writeFileSync(dst, dec.sources[name], 'utf8');
+    const content = dec.sources[name];
+    if (precheck.isBinaryFile(name, content)) {
+      // 二进制条目是 latin1 逐字节映射进卡带的，必须原路还原成字节，
+      // 按 utf8 写会打坏数据（且编译不报错，是最坏的一类失败）
+      fs.writeFileSync(dst, Buffer.from(content, 'latin1'));
+    } else {
+      fs.writeFileSync(dst, content, 'utf8');
+    }
   }
 
   const env = pxtEnv();
@@ -315,16 +332,26 @@ async function convertOne(pxt, tpl, src, outPath, opts) {
   // 缺包是编译失败最常见的原因，先算出来，等 build 失败时用来归因。
   const missing = precheck.missingDeps(work, pre.deps);
 
+  // 编译产物必须是本次 build 写出来的才算数：工作目录是新建的，正常情况
+  // 不可能有旧产物，这个时间戳核对是防 rmrf/文件系统异常导致拿旧货交差。
+  const buildStart = Date.now();
   let r = spawnSync(process.execPath, [pxt.pxtJs, 'build', '--hwvariant', 'vm'], {
     cwd: work, env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 600000,
   });
-  let image = path.join(work, 'built', 'binary.pxt64');
-  if (!fs.existsSync(image) && ensureDockerStub(work)) {
+  const image = path.join(work, 'built', 'binary.pxt64');
+  const imageFresh = () => {
+    try {
+      return fs.statSync(image).mtimeMs >= buildStart - 2000;
+    } catch (e) {
+      return false;
+    }
+  };
+  if (!imageFresh() && ensureDockerStub(work)) {
     r = spawnSync(process.execPath, [pxt.pxtJs, 'build', '--hwvariant', 'vm'], {
       cwd: work, env, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024, timeout: 600000,
     });
   }
-  if (!fs.existsSync(image)) {
+  if (!imageFresh()) {
     let detail;
     if (missing.length) {
       // 缺扩展是压倒性的大概率原因，优先报它，别让玩家在 TS 报错里迷路
@@ -443,6 +470,17 @@ async function main() {
 
   const files = collectInputs(opts.inputs, log);
   if (files.length === 0) die('没有找到任何 .png 卡带');
+
+  // 清扫上次异常退出遗留的工作目录（命名带 pid/时间戳，正在用的不会被
+  // 本进程碰到；被别的进程占用时 rmrf 静默失败，无害）
+  try {
+    const arcadeDir = path.join(pxt.root, 'pxt-arcade');
+    for (const ent of fs.readdirSync(arcadeDir)) {
+      if (ent.startsWith('.cartconv_work')) rmrf(path.join(arcadeDir, ent));
+    }
+  } catch (e) {
+    /* 清不掉不致命 */
+  }
 
   if (!templateReady()) buildTemplate(pxt, log);
   const tpl = templateDir();
