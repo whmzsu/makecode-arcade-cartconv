@@ -62,7 +62,7 @@ ls -l "$STAGE/cartconv.exe" | awk '{printf "   cartconv.exe  %d KB\n", $5/1024}'
 
 echo "== 2/6 主程序 =="
 cp "$HERE/cartconv.js" "$HERE/cartdec.js" "$HERE/precheck.js" "$STAGE/"
-cp "$HERE/fakebin/docker.cmd" "$STAGE/fakebin/" 2>/dev/null || cp "$PROJ/tools/fakebin/docker.cmd" "$STAGE/fakebin/"
+cp "$HERE/fakebin/docker.cmd" "$STAGE/fakebin/"
 
 echo "== 3/6 node 运行时 =="
 cp "$NODE_EXE" "$STAGE/runtime/node.exe"

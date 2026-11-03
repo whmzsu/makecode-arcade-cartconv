@@ -30,7 +30,7 @@ ROOT = os.path.dirname(HERE)
 # 本仓库布局：pxt 编译链在 <仓库>/vm-build/node_modules（原 core 仓库是 tools/vm-build）
 TARGET = os.path.join(ROOT, "vm-build", "node_modules", "pxt-arcade")
 PXT_JS = os.path.join(ROOT, "vm-build", "node_modules", "pxt-core", "built", "pxt.js")
-FAKEBIN = os.path.join(HERE, "fakebin")
+FAKEBIN = os.path.join(ROOT, "fakebin")
 
 sys.path.insert(0, HERE)
 from extract_png_meta import png_to_rgba, extract_payload, payload_to_project  # noqa: E402
