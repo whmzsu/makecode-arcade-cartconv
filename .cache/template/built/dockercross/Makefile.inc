@@ -1,6 +1,0 @@
-PXT_C = 
-PXT_CPP = pxtapp/base/pxt.cpp pxtapp/base/gc.cpp pxtapp/base/core.cpp pxtapp/base/advmath.cpp pxtapp/base/trig.cpp pxtapp/base/buffer.cpp pxtapp/base/loops.cpp pxtapp/base/control.cpp pxtapp/base/controlgc.cpp pxtapp/core---vm/scheduler.cpp pxtapp/core---vm/config.cpp pxtapp/core---vm/target.cpp pxtapp/core---vm/platform.cpp pxtapp/core---vm/control.cpp pxtapp/core---vm/codalemu.cpp pxtapp/core---vm/dmesg.cpp pxtapp/core---vm/keys.cpp pxtapp/core---vm/vm.cpp pxtapp/core---vm/vmload.cpp pxtapp/core---vm/vmcache.cpp pxtapp/core---vm/verify.cpp pxtapp/game/systemKeyboard.cpp pxtapp/game/targetoverrides.cpp pxtapp/game/controllerbuttons.cpp pxtapp/game/multiplayer.cpp pxtapp/game/keymap.cpp pxtapp/hw---vm/sdlmain.cpp pxtapp/mixer---ext/sound.cpp pxtapp/mixer---ext/melody.cpp pxtapp/screen---ext/screen.cpp pxtapp/screen---ext/panic.cpp pxtapp/screen---ext/image.cpp pxtapp/settings---files/settings.cpp pxtapp/pointers.cpp pxtapp/main.cpp
-PXT_S = 
-PXT_HEADERS = pxtapp/configkeys.h pxtapp/pxtbase.h pxtapp/pxt.h pxtapp/platform.h pxtapp/pxtcore.h pxtapp/pins.h pxtapp/platform_includes.h pxtapp/vm.h pxtapp/mixer---ext/SoundOutput.h pxtapp/mixer---ext/melody.h pxtapp/pxtconfig.h
-PXT_SOURCES := $(PXT_C) $(PXT_S) $(PXT_CPP)
-PXT_OBJS := $(addprefix bld/, $(PXT_C:.c=.o) $(PXT_S:.s=.o) $(PXT_CPP:.cpp=.o))
