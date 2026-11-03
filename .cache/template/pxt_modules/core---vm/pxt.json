@@ -1,0 +1,73 @@
+{
+    "name": "core---vm",
+    "description": "The core library for Codal-based targets",
+    "dependencies": {
+        "base": "*"
+    },
+    "files": [
+        "README.md",
+        "Makefile",
+        "dal.d.ts",
+        "scheduler.cpp",
+        "config.cpp",
+        "target.cpp",
+        "pxt.h",
+        "platform.h",
+        "platform.cpp",
+        "pxtcore.h",
+        "pins.h",
+        "control.cpp",
+        "shims.d.ts",
+        "enums.d.ts",
+        "ns.ts",
+        "timer.ts",
+        "platform_includes.h",
+        "codalemu.cpp",
+        "dmesg.cpp",
+        "keys.cpp",
+        "vm.cpp",
+        "vmload.cpp",
+        "vm.h",
+        "vmcache.cpp",
+        "verify.cpp",
+        "pxtparts.json"
+    ],
+    "testFiles": [
+        "test.ts"
+    ],
+    "public": true,
+    "targetVersions": {
+        "target": "4.2.1",
+        "pxt": "13.2.1"
+    },
+    "yotta": {
+        "config": {
+            "codal": {
+                "component_count": 64,
+                "dmesg_buffer_size": 1024
+            }
+        }
+    },
+    "dalDTS": {
+        "includeDirs": [
+            "libraries/codal-core/inc",
+            "pxtapp"
+        ],
+        "excludePrefix": [
+            "JD_",
+            "USB_",
+            "REQUEST_",
+            "LIS3DH_",
+            "FXOS8700_",
+            "HF2_",
+            "PXT_REF_TAG_",
+            "MS_",
+            "SCSI_",
+            "MAG_",
+            "MAG3",
+            "MPU6",
+            "MADCTL",
+            "MMA8"
+        ]
+    }
+}
