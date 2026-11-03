@@ -39,10 +39,26 @@ node cartconv.js carts/ -o out/     # 批量
 
 | 情况 | 工具表现 | 说明 |
 |---|---|---|
-| 依赖社区扩展 `gh:user/repo` | 编译前拦下 | 需要联网下载，离线包做不到 |
+| 依赖社区扩展 `gh:user/repo` | 能连 GitHub 就联网下载编译；连不上则编译前拦下 | 见下 |
 | 本地没有的扩展名 | `install` 后核对，报出缺哪个 | 官方扩展离线可用，第三方不行 |
 | 源码含二进制资源 | 原样写回工程，警告后继续编译 | 见下 |
 | 卡带比编译器新 | 警告但继续编译 | 本地 pxt-arcade 4.2.1 |
+
+### 社区扩展与联网（v1.2.0 起）
+
+卡带用到社区扩展时（`"gh:user/repo"` 或 `"pkg": "github:user/repo#tag"` 两种写法
+都识别），cartconv 会先探测 GitHub 连通性（codeload.github.com 主通道 +
+api.github.com 兜底，6 秒超时）：
+
+- **连得上** → 放行，`pxt install` 现场从 GitHub 下载扩展再编译。下载失败
+  （仓库不存在、网络抖动）会在报错里说明是下载问题，不会伪装成其他错误；
+- **连不上** → 编译前拦下并说明缺什么，避免一句没信息量的 pxt 报错；
+- `--no-net` 可强制按离线处理（跳过探测）。
+
+内置编译链对扩展下载通道打过补丁：raw.githubusercontent.com 不可达时自动改走
+codeload 整仓快照，再不行走 api.github.com contents API 逐文件兜底。
+`testdata/net-ghdep.png` 是声明了真实社区扩展的样本卡带（联网时转换成功，
+离线时按缺扩展拦下）。
 
 ### 二进制资源怎么处理（v1.2.0 起）
 

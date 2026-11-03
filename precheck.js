@@ -155,9 +155,18 @@ function inspectAssetRefs(sources) {
  * 依赖检查。
  *
  * 官方扩展（animation / color-coded-tilemap 等）都在 pxt-common-packages/libs
- * 里，install 时从本地复制，离线可用。以 gh: / http(s) 形式声明的社区扩展
- * 必须联网下载，离线包里必然失败 —— 这种要在编译前就说清楚。
+ * 里，install 时从本地复制，离线可用。社区扩展必须联网下载，有两种写法：
+ *   键格式：  "gh:user/repo": "*"          （老项目）
+ *   值格式：  "status": "github:user/repo#v0.2.0"  （现代编辑器保存的标准格式）
+ * 两种都要识别，漏了值格式会让预检对真实卡带的远端依赖视而不见。
  */
+function isRemoteDep(name, value) {
+  return (
+    /^(gh:|gh-|github:|https?:)/i.test(name) ||
+    /^(github:|gh:|https?:)/i.test(String(value || ''))
+  );
+}
+
 function inspectDeps(pxtJson, pxtRoot) {
   const deps = (pxtJson && pxtJson.dependencies) || {};
   const remote = [];
@@ -166,7 +175,7 @@ function inspectDeps(pxtJson, pxtRoot) {
   const libsDir = pxtRoot ? path.join(pxtRoot, 'pxt-common-packages', 'libs') : null;
 
   for (const name of Object.keys(deps).sort()) {
-    if (/^(gh:|gh-|github:|https?:)/i.test(name)) {
+    if (isRemoteDep(name, deps[name])) {
       remote.push(name);
       continue;
     }
@@ -244,8 +253,13 @@ function inspectVersion(meta, pxtRoot) {
  * 汇总。返回 { fatal[], warn[] }：
  *   fatal —— 不编译，直接判失败（继续也没有意义）
  *   warn  —— 继续编译，但把风险说出来
+ *
+ * opts.online —— GitHub 连通性已知时传布尔值；不传则按离线处理。
+ * 连得上 GitHub 时社区扩展从"必死"降级为"警告"：pxt install 会现场
+ * 下载（codeload 主通道 + api.github.com 兜底，见 vm-build 里的补丁）。
  */
-function run(dec, pxtRoot) {
+function run(dec, pxtRoot, opts) {
+  const o = opts || {};
   const fatal = [];
   const warn = [];
 
@@ -265,9 +279,15 @@ function run(dec, pxtRoot) {
   if (pxtJson) {
     const d = inspectDeps(pxtJson, pxtRoot);
     if (d.remote.length) {
-      fatal.push(
-        `需要联网下载社区扩展：${d.remote.join(', ')}（便携包只含官方扩展，离线无法完成）`
-      );
+      if (o.online) {
+        warn.push(
+          `将联网下载社区扩展：${d.remote.join(', ')}（下载失败或仓库不存在时编译会失败）`
+        );
+      } else {
+        fatal.push(
+          `需要联网下载社区扩展：${d.remote.join(', ')}（便携包只含官方扩展，离线无法完成）`
+        );
+      }
     }
   }
 
@@ -289,4 +309,4 @@ function run(dec, pxtRoot) {
   return { fatal, warn, deps: pxtJson ? pxtJson.dependencies || {} : {}, version: v };
 }
 
-module.exports = { run, inspectFiles, inspectAssetRefs, isBinaryFile, inspectDeps, missingDeps, inspectVersion };
+module.exports = { run, inspectFiles, inspectAssetRefs, isBinaryFile, inspectDeps, isRemoteDep, missingDeps, inspectVersion };

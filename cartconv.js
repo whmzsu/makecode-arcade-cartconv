@@ -19,6 +19,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const { spawnSync } = require('child_process');
 const { decodeCart } = require('./cartdec.js');
 const precheck = require('./precheck.js');
@@ -218,6 +219,69 @@ function pickErrorLine(s) {
   return lines[0] || '';
 }
 
+// ---------------------------------------------------------------- GitHub 连通性
+
+/*
+ * 探测能不能下载 gh: 社区扩展。
+ *
+ * pxt 下载扩展的通道（见 vm-build 里打的补丁）：
+ *   主：codeload.github.com  整仓 tarball 快照
+ *   兜底：api.github.com     contents API 逐文件
+ * 所以探测这两个域名，任一可达（任何 HTTP 状态码都算，403 也是连通）即算在线。
+ *
+ * 结果缓存：成功缓存整个进程生命周期；失败缓存 2 分钟（网络抖动后过会儿
+ * 还能再试，但不会每张卡带都白等 6 秒超时）。
+ */
+const GH_PROBE_URLS = [
+  'https://codeload.github.com/microsoft/pxt-arcade/tar.gz/HEAD',
+  'https://api.github.com/repos/microsoft/pxt-arcade',
+];
+let ghProbeCache = null; // { value: boolean, expires: number }
+
+function probeGitHubOnce(url, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    const fin = (v) => {
+      if (!done) {
+        done = true;
+        resolve(v);
+      }
+    };
+    try {
+      const u = new URL(url);
+      const req = https.request(
+        { hostname: u.hostname, path: u.pathname, method: 'HEAD', timeout: timeoutMs },
+        (res) => {
+          res.resume();
+          fin(true);
+        }
+      );
+      req.on('timeout', () => {
+        req.destroy();
+        fin(false);
+      });
+      req.on('error', () => fin(false));
+      req.end();
+    } catch (e) {
+      fin(false);
+    }
+  });
+}
+
+async function probeGitHub() {
+  const now = Date.now();
+  if (ghProbeCache && ghProbeCache.expires > now) return ghProbeCache.value;
+  let ok = false;
+  for (const url of GH_PROBE_URLS) {
+    if (await probeGitHubOnce(url, 6000)) {
+      ok = true;
+      break;
+    }
+  }
+  ghProbeCache = { value: ok, expires: ok ? Infinity : now + 120000 };
+  return ok;
+}
+
 // ---------------------------------------------------------------- 输入收集
 
 function collectInputs(args, log) {
@@ -281,9 +345,22 @@ async function convertOne(pxt, tpl, src, outPath, opts) {
   const started = Date.now();
   const dec = await decodeCart(src);
 
-  // 编译前预检。需要联网的社区扩展在这里就拦下，否则玩家看到的是一句
-  // 没有信息量的 pxt 报错；二进制资源不再拦截，只给警告（见 precheck.js）。
-  const pre = precheck.run(dec, pxt.root);
+  // 卡带声明了 gh: 等社区扩展时，先探 GitHub 连通性：连得上就放行，
+  // 让 pxt install 现场下载；连不上维持离线拦截（避免一句没信息量的报错）。
+  let online = false;
+  try {
+    const pj = dec.sources['pxt.json'] ? JSON.parse(dec.sources['pxt.json']) : null;
+    const deps = (pj && pj.dependencies) || {};
+    // 键格式（"gh:user/repo"）和值格式（"pkg": "github:user/repo#tag"）都算远端
+    const hasRemote = Object.keys(deps).some((n) => precheck.isRemoteDep(n, deps[n]));
+    if (hasRemote && !opts.noNet) online = await probeGitHub();
+  } catch (e) {
+    online = false;
+  }
+
+  // 编译前预检。需要联网的社区扩展在这里就拦下（在线时放行），否则玩家
+  // 看到的是一句没有信息量的 pxt 报错；二进制资源不再拦截，只给警告。
+  const pre = precheck.run(dec, pxt.root, { online });
   if (pre.fatal.length) {
     // 首行要能独立读懂 —— 失败清单只显示首行
     if (pre.fatal.length === 1) throw new Error('无法转换：' + pre.fatal[0]);
@@ -355,11 +432,15 @@ async function convertOne(pxt, tpl, src, outPath, opts) {
     let detail;
     if (missing.length) {
       // 缺扩展是压倒性的大概率原因，优先报它，别让玩家在 TS 报错里迷路
-      detail =
-        `缺少依赖扩展 ${missing.join(', ')}\n` +
-        '  这些扩展本机没有，需要联网从 MakeCode 扩展库下载；\n' +
-        '  离线环境下无法完成。\n' +
-        (inst.stderr ? '  pxt install 输出：\n' + tail(inst.stderr, 600) : '');
+      detail = online
+        ? `缺少依赖扩展 ${missing.join(', ')}\n` +
+          '  已联网下载但没有装上：可能是网络不稳定、仓库不存在\n' +
+          '  （检查 pxt.json 里 gh: 后面的用户名/仓库名），或扩展不兼容当前编译器。\n' +
+          (inst.stderr ? '  pxt install 输出：\n' + tail(inst.stderr, 600) : '')
+        : `缺少依赖扩展 ${missing.join(', ')}\n` +
+          '  这些扩展本机没有，需要联网从 MakeCode 扩展库下载；\n' +
+          '  离线环境下无法完成。\n' +
+          (inst.stderr ? '  pxt install 输出：\n' + tail(inst.stderr, 600) : '');
     } else if (r.error && r.error.code === 'ETIMEDOUT') {
       detail = '编译超时（超过 10 分钟）\n  用 --verbose 可以看到卡在哪一步。';
     } else {
@@ -405,7 +486,7 @@ async function convertOne(pxt, tpl, src, outPath, opts) {
 // ---------------------------------------------------------------- 参数
 
 function parseArgs(argv) {
-  const opts = { inputs: [], outDir: null, force: false, verbose: false, keepProject: false, quiet: false };
+  const opts = { inputs: [], outDir: null, force: false, verbose: false, keepProject: false, quiet: false, noNet: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-h' || a === '--help') opts.help = true;
@@ -414,6 +495,7 @@ function parseArgs(argv) {
     else if (a === '--force') opts.force = true;
     else if (a === '-v' || a === '--verbose') opts.verbose = true;
     else if (a === '--keep-project') opts.keepProject = true;
+    else if (a === '--no-net') opts.noNet = true;
     else if (a === '-q' || a === '--quiet') opts.quiet = true;
     else if (a.startsWith('-')) die(`未知选项: ${a}（--help 查看用法）`);
     else opts.inputs.push(a);
@@ -433,12 +515,15 @@ cartconv ${VERSION} — MakeCode Arcade 卡带转换器（.png → .pxt64）
       --force        已存在同名 .pxt64 时也重新转换
   -v, --verbose      显示编译过程的详细信息
       --keep-project 保留中间工程（排查问题时用）
+      --no-net       禁用联网：不探测 GitHub，社区扩展一律按离线拦截
   -q, --quiet        只输出结果行
   -h, --help         显示本帮助
   -V, --version      显示版本
 
 说明:
   * .png 卡带里存的是项目源码，需要现场编译成 VM 字节码，单张约 5~8 秒。
+  * 卡带用到 gh: 社区扩展时，若本机能连 GitHub 会自动联网下载编译；
+    连不上则提示缺扩展（--no-net 可强制按离线处理）。
   * 目录会递归查找（跳过 node_modules 和隐藏目录）。
   * 把 .png 或文件夹直接拖到 cartconv.exe 上等同于命令行传参。
   * 转换结果可直接被 MakeCode Arcade libretro core 加载。
