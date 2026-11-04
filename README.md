@@ -22,20 +22,86 @@ node cartconv.js carts/ -o out/     # 批量
 
 转换结果 `.pxt64` 放进掌机，在 RetroArch 里加载即可。
 
+## 另一种选择：不装工具，用官方在线 IDE 导出
+
+便携包约 80MB，只是偶尔转一两张卡带的话，其实可以什么都不装——官方在线 IDE
+里就有导出 `.pxt64` 的开关，全程在浏览器完成：
+
+1. 打开 <https://arcade.makecode.com>，把 `.png` 卡带**拖进页面**（或首页 **Import**
+   导入文件）；
+2. 右上角齿轮 ⚙ → **About...** → 点紫色 **Experiments** 按钮；
+3. 把中间那张预览写着 **VM** 的 **Experimental Hardware** 卡片从 `Disabled`
+   点成 **Enabled**，再点左上角 **← Go back**（编辑器会自动重载）；
+4. 编辑器左下 **Download 旁边的 `...`** → **Choose Hardware** → 选 **VM**；
+5. 点 **Download**，浏览器直接下载 `arcade-<项目名>.pxt64`。
+
+每步截图见
+[`MakeCode Arcade 如何官方导出pxt64/官方导出pxt64指导.md`](MakeCode%20Arcade%20如何官方导出pxt64/官方导出pxt64指导.md)。
+
+**两边产出是同一份东西**：同一张卡带，官方线上工具链（写作时 `arcade 4.1.27 /
+pxt 13.1.24`）与本工具内置链（`4.2.1 / 13.2.1`）编出的 `.pxt64` **逐字节一致**
+——已在 ping、jumpy-platformer、community-falling-duck、strawberry-slam 四例上
+验证（最后一例带 6 个 GitHub 扩展），连段数和 SRCM 尾部长度都相同。
+
+两者怎么取舍：
+
+| | 官方在线 IDE | 本工具 |
+|---|---|---|
+| 安装 | 不需要，开网页即可 | 下载约 80MB 便携包 |
+| 批量 | 一张张手动点 | 拖一个文件夹，或命令行 |
+| 离线 | 不行 | 可以（`--no-net`） |
+| 出错时 | 编译器原始报错 | 预检给中文原因与处理建议 |
+| 社区扩展 | 由浏览器现拉 GitHub | 内置 codeload / api 兜底补丁 |
+
+一句话：**偶尔转一两张，官方 IDE 更省事；要批量、离线，或卡在社区扩展下载上，
+用本工具。**
+
 ## 为什么需要转换
 
-`.png` 卡带里只有**项目源码**（`meta` + `source`，用 4 张真实卡带验证过），
+`.png` 卡带里只有**项目源码**（`meta` + `source`，21 张真实卡带均如此），
 没有编译产物。要变成 core 能执行的 VM 字节码，必须现场过一遍 pxt 编译器
 （`pxt build --hwvariant vm`）。这就是这个工具的重量来源——绕不开 node + pxt。
 
-## 支持范围：别指望 100%
+## 支持范围：21 张真实卡带已验证（但别指望 100%）
 
-**已验证的只有 4 张真实卡带**：ping、jumpy、falling duck、cube land
-（ping 在 `examples/`）。覆盖 bpp=1/2、blocks/TS 两种编辑器、含中文源码、
-依赖 animation 与 color-coded-tilemap 的工程。
+2026 年 11 月做过一轮完整回归，共 21 张卡带，语料在
+[makecode-arcade-libretro](https://github.com/whmzsu/makecode-arcade-libretro)
+仓库的 `png_examples/`：
 
-除此之外的卡带没有样本，也就没有保证。已知转不了的情况分四类，工具会主动识别
-并说明原因：
+- **4 张官方示例**（ping / jumpy-platformer / falling-duck / cube-land）——
+  从官网下载的原生 `.png` 卡带，未做任何改动；
+- **17 个真实社区项目**——项目源码从官方分享链接取回，再用本项目
+  `tools/make_cart_png.py` 按官方格式回打成 `.png`（封面取核心实跑截帧），
+  用来覆盖较新的编辑器特性与大量社区扩展。
+
+| 维度 | 结果 |
+|---|---|
+| 转换 | **21 / 21 成功**，0 失败 0 跳过，总耗时约 603 秒 |
+| 编解码闭环 | 17 张回打样本转回 `.pxt64` 后，与打包前的原产物 **sha256 逐字节一致**（png 编解码无损） |
+| 可运行性 | 产物灌进 libretro core 跑 600 帧，**19 张正常**（两例异常见下，均非转换器问题） |
+| 覆盖面 | bpp=1/2、积木与 TS 两种编辑器、含中文源码、二进制资源工程 |
+
+其中 **8 张依赖 GitHub 社区扩展**（`gh:` / `github:` 写法都有），最多一张挂了
+9 个扩展，合计 22 个不同版本引用——联网模式下全部现场下载并编译通过。
+
+17 个社区项目是：blocky-boss-battle、bunny-hop、caterpillar、cave-explorer、
+falling-duck、galgamulti、hot-air-balloon、jewel-raider、kickoff、mouse-adventure、
+pigeon-deliverance、save-the-forest、secure-the-river、space-destroyer、
+stack-the-goats、strawberry-slam、tictactwo。
+
+### 两个已知异常（都不是转换器的问题）
+
+| 卡带 | 现象 | 定性 |
+|---|---|---|
+| mouse-adventure | 无输入时画面静止，冒烟判为 `static` | **误报**。抓帧确认是正常关卡画面（砖墙+老鼠），按键后角色正常移动 21 个不同画面——这游戏无输入时本来就不动 |
+| strawberry-slam | 约 5.1 秒后 VM panic 980（`PANIC_CAST_FROM_NULL`，对 null 调方法），与输入无关、时间点固定 | **疑似游戏自身 bug**：源码里有 `game.runtime()+5000` 的倒计时逻辑。与 castle 黑屏同类，不是转换链引入的 |
+
+复现这两个结论要注意：冒烟必须指向 `core/dist/<target>/` 下的最新 DLL。core 根
+目录那份 0.2.15 旧构建在 panic 时会带崩宿主（`0xc0000005`），会被误判成崩溃；
+0.3.1 起 panic 后宿主存活，判定才是 `panic`。
+
+再往外就没有样本了，也就没有保证。被验证卡带之外的已知限制分四类，工具会主动
+识别并说明原因：
 
 | 情况 | 工具表现 | 说明 |
 |---|---|---|
@@ -77,10 +143,23 @@ codeload 整仓快照，再不行走 api.github.com contents API 逐文件兜底
 
 ### 版本兼容的方向性
 
-已验证卡带的 `meta.targetVersions` 都是 `target 1.3.44 / pxt 6.8.33`，
-本地编译器是 `pxt-arcade 4.2.1 / pxt-core 13.2.1`——**新编译器跑旧卡带**成立。
-反过来不成立：如果卡带用了 4.2.1 之后新增的接口，编译会失败，这时预检会给出
-版本警告作为线索。
+先说清 `meta.targetVersions` 是什么：它记录**卡带被打包那一刻**的工具链版本，
+既不代表文件新旧，也不等于你眼前编辑器的版本。
+
+| 语料 | `meta.targetVersions` | 这个数字怎么来的 |
+|---|---|---|
+| 4 张官方示例 | `target 1.3.44 / pxt 6.8.33` | 官方 **2021-02** 打包这批示例时写入（pxt-arcade 1.3.44 发布于 2021-02-05）。文件是官网现在仍在提供的那一份，只是官方一直没拿新版重打包 |
+| 17 个社区回打样本 | `target 4.2.1 / pxt 13.2.1` | 由 `tools/make_cart_png.py` 回打时按**本地链**写入，并非官方编辑器所写 |
+| （参照）当前官方在线编辑器 | `target 4.1.27 / pxt 13.1.24` | 2026-10 的 stable4.1 分支；本工具链 `4.2.1 / 13.2.1` 反而更新 |
+
+真正的兼容结论是：**`pxt 6.8.33 → 13.2.1` 这段跨度都跑得通**——2021 年的卡带
+能被四年后的编译器吃下，说明老接口没有被删；同代更不用说。反过来不保证：卡带
+若用了比 4.2.1 更新的接口，编译会失败，预检会给出版本警告作为线索。
+
+另外，17 张回打样本的版本戳本来就是本地链写进去的，所以它们转回 `.pxt64`
+逐字节一致属于**闭环自检**（证明编解码无损），不能当成"两个独立来源互证"。
+独立互证在于另一组实验：同一张卡带在官方同版本链（4.1.27/13.1.24）与本工具链
+下编出的产物也逐字节相同，见上一节。
 
 ## 目录结构
 
@@ -98,8 +177,12 @@ package.json         版本号（打包脚本读取）
 vm-build/            pxt 编译链依赖清单（package.json + 锁文件；node_modules 不入库）
 tools/png2pxt64.py   旧版转换脚本（29s/张，留作 cartconv 的参照实现）
 tools/extract_png_meta.py  .png 卡带格式解析（纯 Python，cartdec.js 与其逐字节等价）
+tools/pxt64diff.py   .pxt64 段级对比（段类型分布 / OpCodeMap 名字表差集）
+tools/make_cart_png.py  工程目录 → 官方格式 .png 卡带（造回归语料 / 往返校验）
+tools/fetch_shared.py   官方分享 id → 工程源码 → .pxt64（批量收真实游戏）
 examples/            验证样本
 testdata/            故障样本（预检拦截路径的回归）
+MakeCode Arcade 如何官方导出pxt64/  官方 IDE 导出 .pxt64 的图文指导与截图
 ```
 
 ## 测试样本怎么造
