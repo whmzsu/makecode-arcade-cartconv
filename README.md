@@ -1,3 +1,5 @@
+[English](README.en.md) | 简体中文
+
 # cartconv — MakeCode Arcade 卡带转换器
 
 把 MakeCode Arcade 保存的 `.png` 卡带转换成 `.pxt64` 字节码镜像，供
