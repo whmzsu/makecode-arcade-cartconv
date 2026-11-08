@@ -175,6 +175,28 @@ MakeCode Arcade 核心直接运行。
     -h, --help          帮助
 
 
+另一种办法：不装本工具，用官方在线 IDE 导出
+--------------------------------------------
+偶尔只转一两张的话，官方在线 IDE 也能直接导出 .pxt64：
+
+  1. 打开 https://arcade.makecode.com/
+  2. 右上角齿轮 -> About...（关于）
+  3. 点 Experiments（实验），把 Experimental Hardware（实验性硬件）
+     从 Disabled 点成 Enabled（卡片预览图就是 VM）
+  4. 点 Go back 返回，编辑器会自动重新加载
+  5. 把 .png 卡带拖进页面，等它加载出工程
+  6. 左下 Download 旁边的 "..." -> Choose Hardware -> 选 VM -> 点 Download
+     浏览器会直接下载 arcade-<项目名>.pxt64
+
+  这个开关存在浏览器本地，换浏览器或清缓存后要重新打开一次。
+
+  带截图的完整图文步骤在仓库里（中文版与英文版都有）：
+  https://github.com/whmzsu/makecode-arcade-cartconv
+
+  需要批量转换、离线环境、或者一堆卡带统一处理时，用本工具更省事。
+  两条路编出来的 .pxt64 逐字节一致，用哪个都行。
+
+
 常见问题
 --------
 Q: 提示"不是 MakeCode Arcade 卡带"？
