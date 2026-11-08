@@ -38,7 +38,8 @@ node cartconv.js carts/ -o out/     # 批量
 5. 点 **Download**，浏览器直接下载 `arcade-<项目名>.pxt64`。
 
 每步截图见
-[`MakeCode Arcade 如何官方导出pxt64/官方导出pxt64指导.md`](MakeCode%20Arcade%20如何官方导出pxt64/官方导出pxt64指导.md)。
+[`MakeCode Arcade 如何官方导出pxt64/官方导出pxt64指导.md`](MakeCode%20Arcade%20如何官方导出pxt64/官方导出pxt64指导.md)
+（[English version](MakeCode%20Arcade%20如何官方导出pxt64/官方导出pxt64指导.en.md)）。
 
 **两边产出是同一份东西**：同一张卡带，官方线上工具链（写作时 `arcade 4.1.27 /
 pxt 13.1.24`）与本工具内置链（`4.2.1 / 13.2.1`）编出的 `.pxt64` **逐字节一致**

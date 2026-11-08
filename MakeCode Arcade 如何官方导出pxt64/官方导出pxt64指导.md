@@ -1,5 +1,7 @@
 # MakeCode Arcade 官方在线 IDE 导出 pxt64 游戏卡带——图文指导
 
+[English](官方导出pxt64指导.en.md) | 简体中文
+
 > 适用版本：arcade v4.1.27 / Microsoft MakeCode v13.1.24（写作当日的官方线上版本）。
 > 全程只需要一个浏览器，无需安装任何东西。
 

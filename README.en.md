@@ -43,8 +43,9 @@ you can skip installing anything entirely — the official online IDE has the
    **Choose Hardware** → pick **VM**;
 5. Click **Download** — the browser downloads `arcade-<project>.pxt64`.
 
-A step-by-step illustrated guide (screenshots, in Chinese) lives in
-[`MakeCode Arcade 如何官方导出pxt64/官方导出pxt64指导.md`](MakeCode%20Arcade%20如何官方导出pxt64/官方导出pxt64指导.md).
+A step-by-step illustrated guide lives in
+[`MakeCode Arcade 如何官方导出pxt64/官方导出pxt64指导.en.md`](MakeCode%20Arcade%20如何官方导出pxt64/官方导出pxt64指导.en.md)
+([中文版](MakeCode%20Arcade%20如何官方导出pxt64/官方导出pxt64指导.md)).
 
 **Both paths produce the same bytes**: for the same cartridge, the official
 online toolchain (`arcade 4.1.27 / pxt 13.1.24` at the time of writing) and
