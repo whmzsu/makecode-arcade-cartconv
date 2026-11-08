@@ -240,13 +240,27 @@ if [ "${1:-}" != "--no-zip" ]; then
 import os, sys, zipfile, time
 root, dst = sys.argv[1], sys.argv[2]
 base = 'cartconv'
+
+# 兜底排除：第 5 步在包内真跑一次转换，会留下 .cartconv_bootstrap /
+# .cartconv_work_* 工作目录。脚本前面用 rm -rf 清过一次，但 Windows 上
+# rm 可能被安全软件或权限拦住且返回值不可靠（曾导致本地包多出 714 个
+# 文件、83.3MB 而 CI 是 80.9MB）。压缩这一步再排一遍，保证产物与
+# 清理是否成功无关。
+SKIP_DIRS = ('.cartconv_', '.bs_debug', '.pxt-common-packages-')
+def skip(rel):
+    parts = rel.replace('\\', '/').split('/')
+    return any(p.startswith(SKIP_DIRS) for p in parts[:-1])
+
 t0 = time.time()
 n = 0
 with zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as z:
     for dirpath, _dirs, files in os.walk(os.path.join(root, base)):
         for f in files:
             p = os.path.join(dirpath, f)
-            z.write(p, os.path.relpath(p, root))
+            rel = os.path.relpath(p, root)
+            if skip(rel):
+                continue
+            z.write(p, rel)
             n += 1
 print(f'   {n} 个文件，{time.time() - t0:.0f}s，%s' %
       (f'{os.path.getsize(dst) / 1048576:.1f} MB'))
