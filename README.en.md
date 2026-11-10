@@ -150,6 +150,15 @@ api.github.com as fallback, 6 s timeout):
 The bundled toolchain is patched on the extension download path: when
 raw.githubusercontent.com is unreachable it falls back to codeload
 whole-repo snapshots, then to per-file api.github.com contents API.
+
+pxt also used to resolve `github:repo#tag` into a commit through
+api.github.com (only **60 unauthenticated calls per hour**; past that it
+fails with `Got HTTP 403. Did you forget to pxt login ?`). The patched chain
+now falls back to using the ref name directly against codeload, so **no
+GitHub token is needed and API rate limits do not apply**. Only cartridges
+pulling a dozen extensions would have noticed, but the error message was
+hard to interpret when it hit.
+
 `testdata/net-ghdep.png` is a sample cartridge declaring a real community
 extension (converts fine online; blocked as missing-extension offline).
 

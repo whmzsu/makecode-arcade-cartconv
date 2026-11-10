@@ -21,6 +21,27 @@ node_modules 是 gitignore 的，npm install 会冲掉对 pxt 包的手工修改
 整仓 zip 快照优先（进程内按 (repo, commit) 缓存），失败再依次回退
 raw / contents API。gh: 社区扩展的在线下载全靠它。
 
+## codeload-tagToSha.js
+
+套用位置：同文件，替换 stock 的 `function tagToShaAsync ... async function
+pkgConfigAsync` 之间的内容（保留下一函数起点作定界）。
+
+背景：pxt 下载 `github:user/repo#tag` 之前，会先打
+`api.github.com/repos/<slug>/git/refs/tags/<tag>`（失败再试 heads）把 tag
+解析成 40 位 sha。这个端点**未认证时只有 60 次/小时**，超限返回 403，pxt
+直接抛 `Got HTTP 403. Did you forget to pxt login ?`，整个 install 失败。
+一个挂了 8~14 个扩展的游戏就能把配额打光（实测批量扫 59 个社区工程时触发，
+32 个项目因此失败）。
+
+修法：解析失败（403/401/网络错）时把 ref 原样返回。codeload 的
+`/zip/<ref>` 端点本来就接受分支名和 tag 名，不需要先转成 sha，后续文件
+下载走上面的 codeload 快照补丁。**用户不需要 GitHub token，也不再受
+API 限流影响**（加上这块之前，每次换 IP 都要 `pxt login` 才能批量转扩展卡带）。
+
+注意：没有显式版本号的依赖（`gh:user/repo` 不带 `#tag`）仍会走
+`latestVersionAsync` 去问 api.github.com 的 tags 列表，限流时依旧会失败——
+现有真实卡带语料里没有这种写法。
+
 ## 为什么 pxt-core 停在 13.2.1（2026-11-03 实验结论）
 
 尝试升级 pxt-core 13.2.13 + pxt-common-packages 14.2.1（pxt-arcade master

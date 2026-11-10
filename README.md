@@ -126,6 +126,12 @@ api.github.com 兜底，6 秒超时）：
 
 内置编译链对扩展下载通道打过补丁：raw.githubusercontent.com 不可达时自动改走
 codeload 整仓快照，再不行走 api.github.com contents API 逐文件兜底。
+
+另外，pxt 下载 `github:repo#tag` 前本来要调 api.github.com 把 tag 解析成 commit
+（**未认证只有 60 次/小时**，超限就报 `Got HTTP 403. Did you forget to pxt login ?`），
+现在解析失败时直接用 ref 名走 codeload——所以**不需要 GitHub token，也不受 API
+限流影响**。只有一个挂了十来个扩展的卡带才会明显感到差别，但撞上限流时报错很难懂。
+
 `testdata/net-ghdep.png` 是声明了真实社区扩展的样本卡带（联网时转换成功，
 离线时按缺扩展拦下）。
 

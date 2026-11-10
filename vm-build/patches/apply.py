@@ -1,19 +1,31 @@
 #!/usr/bin/env python3
 """apply.py — npm install 后把 mca-cartconv 补丁重放到 pxt-core
 
-npm install 每次都会把 node_modules 恢复成原版，冲掉 pxt.js 里的
-网络下载补丁（codeload 快照 + api.github.com 兜底）。本脚本把
-patches/*.js 补丁块整体替换回 pxt.js 对应的 stock 区块。
+npm install 每次都会把 node_modules 恢复成原版，冲掉 pxt.js 里的网络补丁。
+本脚本把 patches/*.js 补丁块整体替换回 pxt.js 对应的 stock 区块。
 
-幂等：pxt.js 里已有补丁标记时跳过。CI（GitHub Actions）和本地重装
+目前有两块补丁，都只跟「能不能在受限网络拉到 github: 扩展」有关：
+
+1. codeload-downloadTextAsync.js
+   raw.githubusercontent.com 在部分网络不可达（TLS 握手 ECONNRESET），
+   改为从 codeload.github.com 拉整个仓库快照，按文件路径从内存取。
+
+2. codeload-tagToSha.js
+   pxt 下载扩展前会先打 api.github.com 的 git/refs 把 tag 解析成 sha。
+   未认证调用限流 60 次/小时，超限即 403，pxt 报
+   "Got HTTP 403. Did you forget to pxt login ?" 并让整个 install 失败。
+   codeload 的 zip 端点本来就接受 tag/分支名，所以解析失败时直接把 ref
+   原样返回（不再要求有 GitHub token）。
+
+幂等：pxt.js 里已有该补丁的标记时跳过。CI（GitHub Actions）和本地重装
 node_modules 后都跑这一步。
 
-stock 区块的定界符只匹配当前锁定的 pxt-core 13.2.1。若升级
-pxt-core，先核对新版函数边界再改这里的 STOCK_HEAD/STOCK_TAIL。
+定界符只匹配当前锁定的 pxt-core 13.2.1。若升级 pxt-core，先核对新版函数
+边界再改这里的 PATCH_SPECS。
 """
 
-import glob
 import os
+import subprocess
 import sys
 
 # Windows runner 的 Python 默认 stdout 是 cp1252，print 中文会炸
@@ -26,60 +38,79 @@ PXT_JS = os.path.normpath(
     os.path.join(HERE, "..", "node_modules", "pxt-core", "built", "pxt.js")
 )
 
-MARK = "PATCH(mca-cartconv)"
+# 每块补丁：文件、stock 区块起止定界符、幂等标记。
+#   replace='block'  —— 把 [head, tail] 整段（含 tail）换成补丁块
+#   replace='before' —— 只把 [head, tail) 换掉，tail 那行保留（用作下一函数的起点）
+PATCH_SPECS = [
+    {
+        "file": "codeload-downloadTextAsync.js",
+        "head": "function downloadTextAsync",
+        "tail": "github.downloadTextAsync = downloadTextAsync;",
+        "replace": "block",
+        "mark": "PATCH(mca-cartconv)",
+    },
+    {
+        "file": "codeload-tagToSha.js",
+        "head": "function tagToShaAsync",
+        "tail": "async function pkgConfigAsync",
+        "replace": "before",
+        "mark": "PATCH(mca-cartconv:tagref)",
+    },
+]
 
-# stock downloadTextAsync 的起止（含尾部导出赋值）。13.2.1 里 stock 实现
-# 只有几十行，两个定界符之间的内容整体被补丁块替换。
-STOCK_HEAD = "function downloadTextAsync"
-STOCK_TAIL = "github.downloadTextAsync = downloadTextAsync;"
 
+def apply_one(spec, s):
+    patch_path = os.path.join(HERE, spec["file"])
+    if not os.path.isfile(patch_path):
+        print(f"!! 找不到补丁 {spec['file']}", file=sys.stderr)
+        return s, False
+    if spec["mark"] in s:
+        print(f"== 已打过 {spec['file']}，跳过")
+        return s, True
 
-def apply_one(patch_path):
     with open(patch_path, encoding="utf8") as f:
         block = f.read()
-    if MARK not in block:
-        print(f"!! {patch_path} 里没有补丁标记 {MARK}，跳过", file=sys.stderr)
-        return False
+    if spec["mark"] not in block:
+        print(f"!! {spec['file']} 里没有补丁标记 {spec['mark']}", file=sys.stderr)
+        return s, False
 
-    with open(PXT_JS, encoding="utf8") as f:
-        s = f.read()
-    if MARK in s:
-        print(f"== 已打过补丁，跳过 {os.path.basename(patch_path)}")
-        return True
-
-    a = s.find(STOCK_HEAD)
-    b = s.find(STOCK_TAIL)
+    a = s.find(spec["head"])
+    b = s.find(spec["tail"], a + 1) if a >= 0 else -1
     if a < 0 or b < a:
         print(
-            "!! pxt.js 里找不到 stock downloadTextAsync 区块——pxt-core 版本"
-            "可能变了，请核对 apply.py 里的定界符",
+            f"!! pxt.js 里找不到 {spec['head']!r} 的 stock 区块——pxt-core 版本"
+            "可能变了，请核对 apply.py 里的 PATCH_SPECS",
             file=sys.stderr,
         )
         sys.exit(2)
-    end = b + len(STOCK_TAIL)
+
+    end = b + len(spec["tail"]) if spec["replace"] == "block" else b
     s2 = s[:a] + block + s[end:]
-    with open(PXT_JS, "w", encoding="utf8", newline="") as f:
-        f.write(s2)
-    print(f"== 已重放 {os.path.basename(patch_path)}（{len(s)} -> {len(s2)} 字节）")
-    return True
+    print(f"== 已重放 {spec['file']}（{len(s)} -> {len(s2)} 字节）")
+    return s2, True
 
 
 def main():
     if not os.path.isfile(PXT_JS):
         print("!! 找不到 pxt.js——请先在 vm-build 下 npm install", file=sys.stderr)
         sys.exit(1)
-    patches = sorted(glob.glob(os.path.join(HERE, "*.js")))
-    # codeload-downloadTextAsync.js 本身也是 *.js，这里只收补丁块，
-    # apply.py 自己不会被当成补丁（不在 patches/ 目录里被 glob 到）。
-    patches = [p for p in patches if os.path.basename(p) != os.path.basename(__file__)]
-    if not patches:
-        print("!! 没有可重放的补丁", file=sys.stderr)
+
+    with open(PXT_JS, encoding="utf8") as f:
+        s = f.read()
+    orig_len = len(s)
+
+    ok = True
+    for spec in PATCH_SPECS:
+        s, good = apply_one(spec, s)
+        ok = ok and good
+
+    if not ok:
         sys.exit(1)
-    ok = all(apply_one(p) for p in patches)
+    if len(s) != orig_len:
+        with open(PXT_JS, "w", encoding="utf8", newline="") as f:
+            f.write(s)
 
     # 语法自检：node --check，失败即说明补丁块与当前 pxt-core 不兼容
-    import subprocess
-
     node = os.environ.get("NODE_EXE") or "node"
     chk = subprocess.run([node, "--check", PXT_JS], capture_output=True)
     if chk.returncode != 0:
